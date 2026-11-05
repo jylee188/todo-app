@@ -1,0 +1,75 @@
+name: Deploy Todo App (WEB + WAS)
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: todo-production
+  cancel-in-progress: false
+
+jobs:
+  deploy-was:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Update code and restart WAS
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.WAS_SERVER_HOST }}
+          username: ${{ secrets.WAS_SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -eu
+
+            cd /home/ubuntu/todo-app
+
+            git fetch origin "${{ github.sha }}"
+            git reset --hard FETCH_HEAD
+
+            .venv/bin/python -m pip install -r requirements.txt
+
+            sudo -n /usr/bin/systemctl restart todo-app.service
+
+            curl -fsS \
+              --retry 5 \
+              --retry-connrefused \
+              --retry-delay 1 \
+              --max-time 10 \
+              http://127.0.0.1:5000/api/todos
+
+            echo "WAS deployment completed"
+
+  deploy-web:
+    needs: deploy-was
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+
+      - name: Copy HTML to WEB
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.WEB_SERVER_HOST }}
+          username: ${{ secrets.WEB_SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "index.html"
+          target: "/var/www/html"
+
+      - name: Verify WEB
+        env:
+          WEB_HOST: ${{ secrets.WEB_SERVER_HOST }}
+        run: |
+          curl -fsS --max-time 20 "http://${WEB_HOST}/" \
+            -o "$RUNNER_TEMP/deployed-index.html"
+
+          cmp index.html "$RUNNER_TEMP/deployed-index.html"
+
+          echo "WEB deployment completed"
