@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>할 일 목록 - WEB + WAS</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        max-width: 420px;
+        margin: 50px auto;
+        padding: 20px;
+      }
+      .input-box {
+        display: flex;
+        gap: 8px;
+      }
+      input {
+        flex: 1;
+        min-width: 0;
+        padding: 10px;
+      }
+      button {
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      .todo-item {
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid #ddd;
+      }
+      .todo-item span {
+        overflow-wrap: anywhere;
+      }
+      .delete-btn {
+        background: #dc3545;
+        color: white;
+        border: 0;
+        border-radius: 4px;
+      }
+      #message {
+        color: #c00;
+        min-height: 1.5em;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>할 일 목록 — 2-Tier 실습</h2>
+
+    <form id="todo-form" class="input-box">
+      <input
+        id="todo-input"
+        placeholder="새로운 할 일"
+        maxlength="200"
+        required
+      />
+      <button type="submit">추가</button>
+    </form>
+
+    <p id="message" role="alert"></p>
+    <div id="todo-list"></div>
+
+    <script>
+      const WAS_API_URL = "http://WAS_PUBLIC_IP:5000/api/todos";
+      const message = document.getElementById("message");
+
+      async function api(path = "", options = {}) {
+        const response = await fetch(WAS_API_URL + path, options);
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "요청 실패: " + response.status);
+        }
+
+        return data;
+      }
+
+      async function loadTodos() {
+        try {
+          const todos = await api();
+          const list = document.getElementById("todo-list");
+
+          list.replaceChildren();
+
+          todos.forEach((todo) => {
+            const row = document.createElement("div");
+            row.className = "todo-item";
+
+            const title = document.createElement("span");
+            title.textContent = todo.title;
+
+            const button = document.createElement("button");
+            button.className = "delete-btn";
+            button.textContent = "삭제";
+            button.addEventListener("click", () => deleteTodo(todo.id));
+
+            row.append(title, button);
+            list.appendChild(row);
+          });
+
+          message.textContent = "";
+        } catch (error) {
+          message.textContent = "조회 실패: " + error.message;
+        }
+      }
+
+      document
+        .getElementById("todo-form")
+        .addEventListener("submit", async (event) => {
+          event.preventDefault();
+
+          const input = document.getElementById("todo-input");
+          const title = input.value.trim();
+
+          if (!title) return;
+
+          try {
+            await api("", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title }),
+            });
+
+            input.value = "";
+            await loadTodos();
+          } catch (error) {
+            message.textContent = "추가 실패: " + error.message;
+          }
+        });
+
+      async function deleteTodo(id) {
+        try {
+          await api("/" + id, { method: "DELETE" });
+          await loadTodos();
+        } catch (error) {
+          message.textContent = "삭제 실패: " + error.message;
+        }
+      }
+
+      loadTodos();
+    </script>
+  </body>
+</html>
